@@ -381,7 +381,7 @@ function resolveHudInteract(target: FirstPersonInteractableTarget | null): Walkt
       control.kind === 'toggle' ? [index] : [],
     )
     const values = useInteractive.getState().items[target.id]?.controlValues
-    const isOn = indices.some((index) => Boolean(values?.[index]))
+    const isOn = node.lighting?.enabled ?? indices.some((index) => Boolean(values?.[index]))
     return { label: node.name ?? node.asset.name, verb: isOn ? 'turn off' : 'turn on' }
   }
   if (target.type === 'procedural') {
@@ -1118,8 +1118,22 @@ export const FirstPersonControls = () => {
     }
     if (target.type === 'item') {
       const node = useScene.getState().nodes[target.id]
-      if (node?.type === 'item' && node.asset.interactive)
-        useInteractive.getState().toggleItemToggles(target.id, node.asset.interactive)
+      if (node?.type === 'item' && node.asset.interactive) {
+        const effect = node.asset.interactive.effects.find((entry) => entry.kind === 'light')
+        if (effect && node.asset.interactive.controls.some((entry) => entry.kind === 'toggle')) {
+          const toggleIndex = node.asset.interactive.controls.findIndex((entry) => entry.kind === 'toggle')
+          const lighting = node.lighting ?? {
+            enabled: Boolean(useInteractive.getState().items[node.id]?.controlValues[toggleIndex]),
+            intensity: effect.intensityRange[1],
+            color: effect.color,
+          }
+          useScene.getState().updateNode(node.id, {
+            lighting: { ...lighting, enabled: !lighting.enabled },
+          })
+        } else {
+          useInteractive.getState().toggleItemToggles(target.id, node.asset.interactive)
+        }
+      }
       return
     }
 

@@ -1,6 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { polygonsIntersect, polygonsOverlap } from '@pascal-app/core'
-import type { AnyNodeId, ItemNode as ItemNodeType } from '@pascal-app/core/schema'
+import { getRenderableSlabPolygon, polygonsIntersect, polygonsOverlap } from '@pascal-app/core'
+import type {
+  AnyNodeId,
+  ItemNode as ItemNodeType,
+  SlabNode,
+  WallNode,
+} from '@pascal-app/core/schema'
 import { ItemNode } from '@pascal-app/core/schema'
 import { z } from 'zod'
 import type { SceneOperations } from '../operations'
@@ -34,13 +39,13 @@ async function assertWritableScene(
   }
 }
 
-function floorItem(bridge: SceneOperations, id: string): ItemNodeType {
+function floorItem(bridge: SceneOperations, id: string, allowSlabSupport = false): ItemNodeType {
   const node = bridge.getNode(id as AnyNodeId)
   if (node?.type !== 'item' || node.asset.attachTo) {
     throwMcpError(ErrorCode.InvalidParams, `Floor furniture item not found: ${id}`)
   }
   const parent = node.parentId ? bridge.getNode(node.parentId as AnyNodeId) : null
-  if (parent?.type !== 'level' || node.supportSlabId) {
+  if (parent?.type !== 'level' || (node.supportSlabId && !allowSlabSupport)) {
     throwMcpError(
       ErrorCode.InvalidRequest,
       `Item ${id} has an unsupported parent or pinned support`,
@@ -49,19 +54,53 @@ function floorItem(bridge: SceneOperations, id: string): ItemNodeType {
   return node
 }
 
-function validateFloorPose(bridge: SceneOperations, item: ItemNodeType, zoneId: string): void {
-  const zone = bridge.getNode(zoneId as AnyNodeId)
-  if (zone?.type !== 'zone' || zone.parentId !== item.parentId) {
-    throwMcpError(ErrorCode.InvalidParams, `Room not found on the item's level: ${zoneId}`)
-  }
+function floorFootprint(item: ItemNodeType): Array<[number, number]> {
   const aabb = itemNodePlanAabb(item)
   if (!aabb) throwMcpError(ErrorCode.InvalidParams, 'Item has no valid plan footprint')
-  const corners: Array<[number, number]> = [
+  return [
     [aabb.minX, aabb.minZ],
     [aabb.maxX, aabb.minZ],
     [aabb.maxX, aabb.maxZ],
     [aabb.minX, aabb.maxZ],
   ]
+}
+
+function validateSlabSupport(bridge: SceneOperations, item: ItemNodeType): void {
+  if (!item.supportSlabId) return
+  const slab = bridge.getNode(item.supportSlabId as AnyNodeId)
+  if (slab?.type !== 'slab' || slab.parentId !== item.parentId) {
+    throwMcpError(ErrorCode.InvalidRequest, `Item ${item.id} requires a slab support on its level`)
+  }
+  const nodes = Object.values(bridge.getNodes())
+  const polygon = getRenderableSlabPolygon(slab, {
+    walls: nodes.filter(
+      (node): node is WallNode => node.type === 'wall' && node.parentId === item.parentId,
+    ),
+    siblingSlabs: nodes.filter(
+      (node): node is SlabNode =>
+        node.type === 'slab' && node.parentId === item.parentId && node.id !== slab.id,
+    ),
+  })
+  const corners = floorFootprint(item)
+  // Refuse support transitions instead of silently electing a different floor height.
+  if (
+    !corners.every((corner) => pointInPolygon(corner, polygon)) ||
+    polygonsIntersect(corners, polygon) ||
+    slab.holes.some((hole) => polygonsOverlap(corners, hole))
+  ) {
+    throwMcpError(
+      ErrorCode.InvalidParams,
+      'Item footprint must remain inside its support slab, clear of edges and holes',
+    )
+  }
+}
+
+function validateFloorPose(bridge: SceneOperations, item: ItemNodeType, zoneId: string): void {
+  const zone = bridge.getNode(zoneId as AnyNodeId)
+  if (zone?.type !== 'zone' || zone.parentId !== item.parentId) {
+    throwMcpError(ErrorCode.InvalidParams, `Room not found on the item's level: ${zoneId}`)
+  }
+  const corners = floorFootprint(item)
   if (
     !corners.every((corner) => pointInPolygon(corner, zone.polygon)) ||
     polygonsIntersect(corners, zone.polygon) ||
@@ -118,11 +157,21 @@ export function registerFurnitureTools(server: McpServer, bridge: SceneOperation
       if (level?.type !== 'level') {
         throwMcpError(ErrorCode.InvalidParams, `Room has no level parent: ${zoneId}`)
       }
+      const lightEffect = asset.interactive?.effects?.find((effect) => effect.kind === 'light')
       const item = ItemNode.parse({
         parentId: level.id,
         asset,
         position,
         rotation: [0, rotationY, 0],
+        ...(lightEffect
+          ? {
+              lighting: {
+                enabled: false,
+                intensity: lightEffect.intensityRange[1],
+                color: lightEffect.color,
+              },
+            }
+          : {}),
       })
       validateFloorPose(bridge, item, zoneId)
       const itemId = bridge.createNode(item, level.id)
@@ -136,7 +185,7 @@ export function registerFurnitureTools(server: McpServer, bridge: SceneOperation
     {
       title: 'Move or rotate floor furniture',
       description:
-        'Update only a floor item position and/or Y rotation in its level-local frame. Requires a room containing its full plan footprint and a saved scene version.',
+        'Update only a floor item position and/or Y rotation in its level-local frame. Slab-supported items must stay fully on the same valid slab with unchanged Y offset. Requires a room containing its full plan footprint and a saved scene version.',
       inputSchema: {
         itemId: NodeIdSchema,
         zoneId: NodeIdSchema,
@@ -157,12 +206,20 @@ export function registerFurnitureTools(server: McpServer, bridge: SceneOperation
       if (position === undefined && rotationY === undefined) {
         throwMcpError(ErrorCode.InvalidParams, 'Supply position and/or rotationY')
       }
-      const current = floorItem(bridge, itemId)
+      const current = floorItem(bridge, itemId, true)
+      validateSlabSupport(bridge, current)
       const next = ItemNode.parse({
         ...current,
         position: position ?? current.position,
         rotation: [current.rotation[0], rotationY ?? current.rotation[1], current.rotation[2]],
       })
+      if (current.supportSlabId && next.position[1] !== current.position[1]) {
+        throwMcpError(
+          ErrorCode.InvalidParams,
+          'Slab-supported edits must preserve the item Y offset',
+        )
+      }
+      validateSlabSupport(bridge, next)
       if (
         JSON.stringify(next.position) === JSON.stringify(current.position) &&
         next.rotation[1] === current.rotation[1]

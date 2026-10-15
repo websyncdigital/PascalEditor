@@ -3,6 +3,7 @@
 // Node registry bootstrap is loaded once at the root via
 // `<ClientBootstrap>` in `app/layout.tsx` — no per-page side-effect
 // import here.
+import { acquireSceneReadOnlyLease, useScene } from '@pascal-app/core'
 import {
   applySceneGraphToEditor,
   Editor,
@@ -10,15 +11,17 @@ import {
   type SceneGraph,
   type SidebarTab,
 } from '@pascal-app/editor'
-import { Hammer, Layers, Package, Settings } from 'lucide-react'
+import { Hammer, Layers, Package, Settings, Sparkles } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { canApplyRemoteScene } from '@/lib/assistant-scene-guard'
 import { countGraphNodes, isEmptyGraphOverwrite } from '@/lib/empty-graph-guard'
 import { type PersistedSceneGraph, sceneGraphSignature } from '@/lib/scene-signature'
 import { cn } from '@/lib/utils'
 import { BuildTab } from './build-tab'
+import { AssistantProvider, InteriorAssistantPanel } from './interior-assistant'
 import { CommunityViewerToolbarLeft, CommunityViewerToolbarRight } from './viewer-toolbar'
 
 export interface SceneMeta {
@@ -39,6 +42,14 @@ function EditorItemsPanel() {
 }
 
 const SIDEBAR_TABS: (SidebarTab & { component: React.ComponentType })[] = [
+  {
+    id: 'assistant',
+    label: 'Assistant',
+    component: InteriorAssistantPanel,
+    mobileDefaultSnap: 0.75,
+    mobileIcon: <Sparkles className="h-5 w-5" />,
+    icon: <Sparkles className="h-6 w-6" />,
+  },
   {
     id: 'site',
     label: 'Scene',
@@ -137,8 +148,9 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
   // autosave wipe class: a save fired from a not-yet-hydrated (empty) editor
   // store must never overwrite a populated server copy.
   const serverNodeCountRef = useRef(meta.nodeCount)
-  const lastRemoteGraphJsonRef = useRef<string | null>(null)
-  const suppressRemoteSaveUntilRef = useRef(0)
+  const savedGraphRef = useRef(sceneGraphSignature(initialScene))
+  const savesInFlightRef = useRef(0)
+  const assistantExecutingRef = useRef(false)
   const [conflict, setConflict] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -149,13 +161,9 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
   const handleSave = useCallback(
     async (graph: SceneGraph, options?: { keepalive?: boolean }) => {
       const graphJson = sceneGraphSignature(graph)
-      const isRecentRemoteApply = Date.now() < suppressRemoteSaveUntilRef.current
-      if (lastRemoteGraphJsonRef.current === graphJson) {
-        lastRemoteGraphJsonRef.current = null
-        suppressRemoteSaveUntilRef.current = 0
-        return
-      }
-      if (isRecentRemoteApply) return
+      if (graphJson === savedGraphRef.current) return
+      if (assistantExecutingRef.current)
+        throw new Error('Wait for the assistant operation to finish before saving.')
 
       // Wipe guard: never PUT an empty graph over a populated server copy.
       // An empty serialization here means the editor store was not hydrated
@@ -170,6 +178,7 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
         return
       }
 
+      savesInFlightRef.current += 1
       try {
         const response = await fetch(`/api/scenes/${meta.id}`, {
           method: 'PUT',
@@ -207,10 +216,13 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
 
         const next = (await response.json()) as SceneMeta
         versionRef.current = next.version
+        savedGraphRef.current = graphJson
         serverNodeCountRef.current = next.nodeCount
         setSaveError(null)
       } catch (error) {
         setSaveError(error instanceof Error ? error.message : 'Save failed')
+      } finally {
+        savesInFlightRef.current -= 1
       }
     },
     [meta.id, meta.name],
@@ -229,10 +241,20 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
       if (payload.sceneId !== meta.id) return
       if (payload.version <= versionRef.current) return
 
+      if (
+        !canApplyRemoteScene(
+          sceneGraphSignature(useScene.getState()),
+          savedGraphRef.current,
+          savesInFlightRef.current,
+        )
+      ) {
+        setConflict(true)
+        return
+      }
+
       versionRef.current = payload.version
       serverNodeCountRef.current = countGraphNodes(payload.graph)
-      lastRemoteGraphJsonRef.current = sceneGraphSignature(payload.graph)
-      suppressRemoteSaveUntilRef.current = Date.now() + 2500
+      savedGraphRef.current = sceneGraphSignature(payload.graph)
       applySceneGraphToEditor(payload.graph)
       setConflict(false)
       setSaveError(null)
@@ -245,6 +267,59 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
     })
 
     return () => source.close()
+  }, [meta.id])
+
+  const prepareAssistant = useCallback(() => {
+    if (
+      conflict ||
+      saveError ||
+      !canApplyRemoteScene(
+        sceneGraphSignature(useScene.getState()),
+        savedGraphRef.current,
+        savesInFlightRef.current,
+      )
+    ) {
+      throw new Error(
+        'Save your manual edits and resolve any save conflict before using the assistant.',
+      )
+    }
+    return versionRef.current
+  }, [conflict, saveError])
+
+  const beginAssistantExecution = useCallback(() => {
+    const version = prepareAssistant()
+    const release = acquireSceneReadOnlyLease()
+    assistantExecutingRef.current = true
+    return {
+      version,
+      release: () => {
+        assistantExecutingRef.current = false
+        release()
+      },
+    }
+  }, [prepareAssistant])
+
+  const syncAssistantResult = useCallback(async () => {
+    const response = await fetch(`/api/scenes/${meta.id}`, { cache: 'no-store' })
+    if (!response.ok)
+      throw new Error('The saved result could not be loaded. Refresh to inspect it.')
+    const saved = (await response.json()) as SceneMeta & { graph: PersistedSceneGraph }
+    if (
+      !canApplyRemoteScene(
+        sceneGraphSignature(useScene.getState()),
+        savedGraphRef.current,
+        savesInFlightRef.current,
+      )
+    ) {
+      setConflict(true)
+      throw new Error(
+        'Local edits were detected. The assistant result is saved; refresh after preserving your local changes.',
+      )
+    }
+    versionRef.current = saved.version
+    serverNodeCountRef.current = saved.nodeCount
+    savedGraphRef.current = sceneGraphSignature(saved.graph)
+    applySceneGraphToEditor(saved.graph)
   }, [meta.id])
 
   const handleThumb = useCallback(
@@ -314,17 +389,26 @@ export function SceneLoader({ initialScene, meta }: SceneLoaderProps) {
           All scenes
         </Link>
       </div>
-      <Editor
-        disablePostFx={lightPreview}
-        layoutVersion="v2"
-        onLoad={handleLoad}
-        onSave={handleSave}
-        onThumbnailCapture={handleThumb}
-        projectId={meta.projectId ?? 'default'}
-        sidebarTabs={SIDEBAR_TABS}
-        viewerToolbarLeft={<CommunityViewerToolbarLeft />}
-        viewerToolbarRight={<CommunityViewerToolbarRight />}
-      />
+      <AssistantProvider
+        beginExecution={beginAssistantExecution}
+        key={meta.id}
+        prepare={prepareAssistant}
+        sceneId={meta.id}
+        sceneName={meta.name}
+        syncResult={syncAssistantResult}
+      >
+        <Editor
+          disablePostFx={lightPreview}
+          layoutVersion="v2"
+          onLoad={handleLoad}
+          onSave={handleSave}
+          onThumbnailCapture={handleThumb}
+          projectId={meta.projectId ?? 'default'}
+          sidebarTabs={SIDEBAR_TABS}
+          viewerToolbarLeft={<CommunityViewerToolbarLeft />}
+          viewerToolbarRight={<CommunityViewerToolbarRight />}
+        />
+      </AssistantProvider>
     </div>
   )
 }

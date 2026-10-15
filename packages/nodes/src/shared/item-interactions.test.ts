@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { type AnyNode, toggleMechanism, useInteractive } from '@pascal-app/core'
+import { type AnyNode, ItemNode, toggleMechanism, useInteractive, useScene } from '@pascal-app/core'
 import { itemDefinition } from '../item/definition'
 import { proceduralItemDefinition } from '../procedural-item/definition'
 import {
@@ -23,6 +23,7 @@ afterEach(() => {
     state.removeItem(id as never)
     state.removeProcedural(id as never)
   }
+  useScene.setState({ nodes: {} as never })
 })
 
 test('item and procedural item declare their mechanisms through the registry capability', () => {
@@ -91,4 +92,37 @@ test('a light-only procedural item has no mechanism', () => {
   const node = proceduralItem('procedural_pendant', [{ id: 'bulb', light: {} }])
   expect(proceduralMechanism.has(node)).toBe(false)
   expect(itemHasLights(node)).toBe(true)
+})
+
+test('the selected catalog lamp switch updates saved item lighting', () => {
+  const previousRequestAnimationFrame = globalThis.requestAnimationFrame
+  const previousCancelAnimationFrame = globalThis.cancelAnimationFrame
+  globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame
+  globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame
+  try {
+  const node = ItemNode.parse({
+    parentId: null,
+    asset: {
+      id: 'floor-lamp', name: 'Floor Lamp', category: 'furniture',
+      thumbnail: '', src: '/items/floor-lamp/model.glb',
+      interactive: {
+        controls: [{ kind: 'toggle' }],
+        effects: [{ kind: 'light', color: '#ffffff', intensityRange: [0, 2], offset: [0, 1, 0] }],
+      },
+    },
+  })
+  useScene.setState({ nodes: { [node.id]: node } as never })
+  toggleItemLights(node)
+  const lit = useScene.getState().nodes[node.id]
+  expect(lit?.type === 'item' && lit.lighting).toEqual({
+    enabled: true, intensity: 2, color: '#ffffff',
+  })
+  if (!lit) throw new Error('Lamp disappeared')
+  toggleItemLights(lit)
+  const off = useScene.getState().nodes[node.id]
+  expect(off?.type === 'item' && off.lighting?.enabled).toBe(false)
+  } finally {
+    globalThis.requestAnimationFrame = previousRequestAnimationFrame
+    globalThis.cancelAnimationFrame = previousCancelAnimationFrame
+  }
 })

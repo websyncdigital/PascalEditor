@@ -4,6 +4,7 @@ import {
   type InteractiveState,
   type MechanismCapability,
   useInteractive,
+  useScene,
 } from '@pascal-app/core'
 import { operableParts } from '@pascal-app/core/procedural-items'
 
@@ -66,6 +67,7 @@ export function itemLightsOn(node: AnyNode, state: InteractiveState): boolean {
   if (node.type === 'procedural-item')
     return state.procedural[node.id]?.lightsOn ?? state.lampDefault
   if (node.type === 'item' && node.asset.interactive) {
+    if (node.lighting) return node.lighting.enabled
     const { light } = catalogToggles(node.asset.interactive)
     return light >= 0 && Boolean(state.items[node.id]?.controlValues[light])
   }
@@ -81,6 +83,20 @@ export function toggleItemLights(node: AnyNode) {
   if (node.type !== 'item' || !node.asset.interactive) return
   const { light } = catalogToggles(node.asset.interactive)
   if (light < 0) return
+  const saved = useScene.getState().nodes[node.id]
+  if (saved?.type === 'item') {
+    const effect = saved.asset.interactive?.effects.find((entry) => entry.kind === 'light')
+    if (!effect) return
+    const current = saved.lighting ?? {
+      enabled: itemLightsOn(saved, state),
+      intensity: effect.intensityRange[1],
+      color: effect.color,
+    }
+    useScene.getState().updateNode(saved.id, {
+      lighting: { ...current, enabled: !current.enabled },
+    })
+    return
+  }
   state.initItem(node.id, node.asset.interactive)
   state.setControlValue(node.id, light, !itemLightsOn(node, useInteractive.getState()))
 }

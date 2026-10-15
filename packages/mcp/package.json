@@ -6,6 +6,16 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./assistant": {
+      "types": "./dist/assistant/index.d.ts",
+      "import": "./dist/assistant/index.js",
+      "default": "./dist/assistant/index.js"
+    },
+    "./assistant/contracts": {
+      "types": "./dist/assistant/contracts.d.ts",
+      "import": "./dist/assistant/contracts.js",
+      "default": "./dist/assistant/contracts.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",

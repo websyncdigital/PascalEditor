@@ -85,6 +85,19 @@
       }
     },
     {
+      "name": "configure_item_light",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
+      "justifications": {
+        "readOnlyHint": "It changes a catalog lamp's saved illumination state in the connected Pascal scene.",
+        "destructiveHint": "It replaces the lamp's previous on/off state, intensity or color.",
+        "openWorldHint": "It uses only the connected Pascal scene and built-in asset metadata."
+      }
+    },
+    {
       "name": "create_from_template",
       "annotations": {
         "readOnlyHint": false,
@@ -774,6 +787,19 @@
       }
     },
     {
+      "name": "search_finish_materials",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "justifications": {
+        "readOnlyHint": "It searches built-in material metadata without changing scene or project state.",
+        "destructiveHint": "It creates, updates and deletes no Pascal scene or project data.",
+        "openWorldHint": "It reads the bundled material catalog without accessing the public internet."
+      }
+    },
+    {
       "name": "set_floor_foundation",
       "annotations": {
         "readOnlyHint": false,
@@ -784,6 +810,19 @@
         "readOnlyHint": "Updates base plate construction intent and translates its room floor elevations.",
         "destructiveHint": "Preserves authored rooms, boundaries and contents while changing floor and foundation settings.",
         "openWorldHint": "Operates only on the connected scene."
+      }
+    },
+    {
+      "name": "set_room_finish",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
+      "justifications": {
+        "readOnlyHint": "It changes the saved finish of an existing Pascal room.",
+        "destructiveHint": "It replaces the room's previous floor or wall finish with another catalog finish.",
+        "openWorldHint": "It uses the connected Pascal scene and bundled material catalog without public internet access."
       }
     },
     {

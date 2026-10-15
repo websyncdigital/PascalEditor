@@ -13,9 +13,11 @@ import { registerDuplicateLevel } from './duplicate-level'
 import { registerExportGlb } from './export-glb'
 import { registerExportJson } from './export-json'
 import { registerFindNodes } from './find-nodes'
+import { registerFinishTools } from './finish-tools'
 import { registerFurnitureTools } from './furniture-tools'
 import { registerGetNode } from './get-node'
 import { registerGetScene } from './get-scene'
+import { registerLightingTools } from './lighting-tools'
 import { registerListUnits } from './list-units'
 import { registerMeasure } from './measure'
 import { registerPhotoToSceneTool } from './photo-to-scene'
@@ -58,7 +60,9 @@ export function registerTools(server: McpServer, operations: SceneOperations): v
   registerListUnits(server, operations)
   registerCreateWall(server, operations)
   registerPlaceItem(server, operations)
+  registerFinishTools(server, operations)
   registerFurnitureTools(server, operations)
+  registerLightingTools(server, operations)
   registerPlaceDesign(server, operations)
   registerCutOpening(server, operations)
   registerSetZone(server, operations)

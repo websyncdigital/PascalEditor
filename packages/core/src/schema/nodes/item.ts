@@ -170,6 +170,14 @@ export const ItemNode = BaseNode.extend({
   // registry default. A dangling ref renders the default (never blocks).
   slots: z.record(z.string(), z.string()).optional(),
 
+  lighting: z
+    .object({
+      enabled: z.boolean(),
+      intensity: z.number().finite().min(0).max(10),
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    })
+    .optional(),
+
   asset: assetSchema,
 }).describe(dedent`Item node - used to represent a item in the building
   - position: position in level coordinate system (or parent coordinate system if attached)

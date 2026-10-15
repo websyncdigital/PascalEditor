@@ -269,6 +269,7 @@ export function ItemLightSystem() {
         continue
       }
 
+      light.color.set(reg.color)
       if (reg.getWorldPosition(_itemPos)) light.position.copy(_itemPos)
       const targetIntensity = reg.isEligible() && isRendered(reg.nodeId) ? reg.getIntensity() : 0
 

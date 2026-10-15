@@ -293,6 +293,25 @@ export const MCP_CATALOG_ITEMS: AssetInput[] = [
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
   },
+  {
+    id: 'floor-lamp',
+    category: 'furniture',
+    tags: ['floor', 'lighting'],
+    name: 'Floor Lamp',
+    thumbnail: '/items/floor-lamp/thumbnail.webp',
+    src: '/items/floor-lamp/model.glb',
+    dimensions: [0.7, 1.86, 0.69],
+    offset: [0.0341, 0.0045, 0.0219],
+    rotation: [0, 0, 0],
+    scale: [1, 1, 1],
+    interactive: {
+      controls: [
+        { kind: 'toggle' },
+        { kind: 'slider', label: 'Intensity', min: 0, max: 100, unit: '%', displayMode: 'dial', default: 100 },
+      ],
+      effects: [{ kind: 'light', intensityRange: [0, 2], color: '#ffffff', offset: [0, 1.4, 0] }],
+    },
+  },
 ]
 
 export function findCatalogItem(id: string): AssetInput | undefined {

@@ -5,6 +5,7 @@ import {
   type SliderControl,
   sceneRegistry,
   useInteractive,
+  useScene,
 } from '@pascal-app/core'
 import type { Object3D, Vector3 } from 'three'
 import { create } from 'zustand'
@@ -28,10 +29,16 @@ export function catalogLightSource(
   const toggleIndex = interactive.controls.findIndex((control) => control.kind === 'toggle')
   const sliderIndex = interactive.controls.findIndex((control) => control.kind === 'slider')
   const slider = sliderIndex >= 0 ? (interactive.controls[sliderIndex] as SliderControl) : null
+  const savedLighting = () => {
+    const node = useScene.getState().nodes[nodeId]
+    return node?.type === 'item' ? node.lighting : undefined
+  }
   return {
     key,
     nodeId,
-    color: effect.color,
+    get color() {
+      return savedLighting()?.color ?? effect.color
+    },
     distance: effect.distance ?? 0,
     getWorldPosition: (out) => {
       const object = sceneRegistry.nodes.get(nodeId)
@@ -41,6 +48,8 @@ export function catalogLightSource(
       return true
     },
     getIntensity: () => {
+      const lighting = savedLighting()
+      if (lighting) return lighting.enabled ? lighting.intensity : 0
       const values = useInteractive.getState().items[nodeId]?.controlValues
       if (toggleIndex >= 0 && !values?.[toggleIndex]) return effect.intensityRange[0]
       const raw = slider ? ((values?.[sliderIndex] as number) ?? slider.min) : 1
@@ -51,6 +60,8 @@ export function catalogLightSource(
       )
     },
     isEligible: () => {
+      const lighting = savedLighting()
+      if (lighting) return lighting.enabled && lighting.intensity > 0
       const values = useInteractive.getState().items[nodeId]?.controlValues
       return toggleIndex < 0 || Boolean(values?.[toggleIndex])
     },

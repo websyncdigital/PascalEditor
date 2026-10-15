@@ -1,6 +1,6 @@
 'use client'
 
-import { type AnyNode, getScaledDimensions, ItemNode, useScene } from '@pascal-app/core'
+import { type AnyNode, getScaledDimensions, ItemNode, useInteractive, useScene } from '@pascal-app/core'
 import {
   ActionButton,
   ActionGroup,
@@ -65,6 +65,22 @@ export default function ItemPanel() {
     setSelection({ selectedIds: [] })
   }, [setSelection])
 
+  const handleLightingUpdate = useCallback(
+    (patch: Partial<NonNullable<ItemNode['lighting']>>) => {
+      const current = nodeRef.current
+      const effect = current?.asset.interactive?.effects.find((entry) => entry.kind === 'light')
+      if (!current || !effect) return
+      const toggleIndex = current.asset.interactive!.controls.findIndex((entry) => entry.kind === 'toggle')
+      const lighting = current.lighting ?? {
+        enabled: Boolean(useInteractive.getState().items[current.id]?.controlValues[toggleIndex]),
+        intensity: effect.intensityRange[1],
+        color: effect.color,
+      }
+      handleUpdate({ lighting: { ...lighting, ...patch } })
+    },
+    [handleUpdate],
+  )
+
   const handleMove = useCallback(() => {
     if (node) {
       triggerSFX('sfx:item-pick')
@@ -84,6 +100,7 @@ export default function ItemPanel() {
       parentId: node.parentId,
       side: node.side,
       metadata: { isNew: true },
+      lighting: node.lighting,
     })
     setMovingNode(proto)
     setSelection({ selectedIds: [] })
@@ -97,6 +114,15 @@ export default function ItemPanel() {
   }, [selectedId, deleteNode, setSelection])
 
   if (!(node && node.type === 'item' && selectedId)) return null
+  const lightEffect = node.asset.interactive?.effects.find((entry) => entry.kind === 'light')
+  const toggleIndex = node.asset.interactive?.controls.findIndex((entry) => entry.kind === 'toggle') ?? -1
+  const lighting = lightEffect
+    ? (node.lighting ?? {
+        enabled: Boolean(useInteractive.getState().items[node.id]?.controlValues[toggleIndex]),
+        intensity: lightEffect.intensityRange[1],
+        color: lightEffect.color,
+      })
+    : null
 
   return (
     <PanelWrapper
@@ -281,6 +307,37 @@ export default function ItemPanel() {
           </>
         )}
       </PanelSection>
+
+      {lighting && (
+        <PanelSection title="Lighting">
+          <label className="flex items-center justify-between px-2 py-1 text-sm">
+            <span>On</span>
+            <input
+              checked={lighting.enabled}
+              onChange={(event) => handleLightingUpdate({ enabled: event.target.checked })}
+              type="checkbox"
+            />
+          </label>
+          <SliderControl
+            label="Intensity"
+            max={lightEffect!.intensityRange[1]}
+            min={lightEffect!.intensityRange[0]}
+            onChange={(intensity) => handleLightingUpdate({ intensity })}
+            precision={1}
+            step={0.1}
+            value={lighting.intensity}
+          />
+          <label className="flex items-center justify-between px-2 py-1 text-sm">
+            <span>Color</span>
+            <input
+              aria-label="Light color"
+              onChange={(event) => handleLightingUpdate({ color: event.target.value })}
+              type="color"
+              value={lighting.color}
+            />
+          </label>
+        </PanelSection>
+      )}
 
       <PanelSection title="Info">
         <div className="flex items-center justify-between px-2 py-1 text-muted-foreground text-sm">

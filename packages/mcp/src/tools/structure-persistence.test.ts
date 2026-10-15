@@ -9,11 +9,13 @@ import { createPascalMcpServer } from '../server'
 import { SqliteSceneStore } from '../storage/sqlite-scene-store'
 
 describe('saved room structure operations', () => {
-  test('persists intent, rotation, division, merge, and deletion in disposable SQLite scenes', async () => {
+  test.each([
+    false,
+    true,
+  ])('persists intent, rotation, division, merge, and deletion (preloaded room: %s)', async (preloadedRoom) => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'pascal-stage3a-rooms-'))
     const store = new SqliteSceneStore({ databasePath: path.join(directory, 'pascal.db') })
     const bridge = new SceneBridge()
-    bridge.loadDefault()
     const server = createPascalMcpServer({ bridge, store })
     const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair()
     const client = new Client({ name: 'room-persistence-test', version: '1' })
@@ -22,8 +24,41 @@ describe('saved room structure operations', () => {
       const call = async (name: string, args: Record<string, unknown>) => {
         const response = await client.callTool({ name, arguments: args })
         expect(response.isError, JSON.stringify(response)).toBeFalsy()
-        return response.structuredContent as Record<string, unknown>
+        const payload = response.structuredContent as Record<string, unknown>
+        expect(payload.conflicts ?? [], JSON.stringify(payload)).toEqual([])
+        return payload
       }
+
+      if (preloadedRoom) {
+        bridge.setScene({}, [])
+        bridge.loadDefault()
+        const previousLevel = Object.values(bridge.getNodes()).find(
+          (node) => node.type === 'level',
+        )!
+        await call('create_room', {
+          levelId: previousLevel.id,
+          name: 'Previous scene room',
+          polygon: [
+            [0, 0],
+            [4, 0],
+            [4, 3],
+            [0, 3],
+          ],
+        })
+        const previousGraph = bridge.exportJSON()
+        bridge.loadDefault()
+        expect(bridge.exportJSON()).toEqual(previousGraph)
+      }
+
+      // loadDefault preserves an existing scene in the process-wide core store.
+      bridge.setScene({}, [])
+      bridge.loadDefault()
+      bridge.clearHistory()
+      expect(
+        Object.values(bridge.getNodes())
+          .map((node) => node.type)
+          .sort(),
+      ).toEqual(['building', 'level', 'site'])
       const levelId = Object.values(bridge.getNodes()).find((node) => node.type === 'level')!.id
       const room = await call('create_room', {
         levelId,
@@ -37,6 +72,11 @@ describe('saved room structure operations', () => {
       })
       const zoneId = room.zoneId as string
       const baseGraph = bridge.exportJSON()
+      expect(
+        Object.values(baseGraph.nodes)
+          .filter((node) => node.type === 'zone')
+          .map((node) => node.id),
+      ).toEqual([zoneId])
       const verify = async (sceneId: string, version: number) => {
         const saved = await store.load(sceneId)
         expect(saved?.version).toBe(version)
@@ -87,6 +127,8 @@ describe('saved room structure operations', () => {
       await client.close()
       await server.close()
       store.close()
+      bridge.setScene({}, [])
+      bridge.clearHistory()
       await fs.rm(directory, { recursive: true, force: true })
     }
   })

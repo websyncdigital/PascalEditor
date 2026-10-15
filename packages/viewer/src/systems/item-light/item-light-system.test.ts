@@ -5,7 +5,7 @@ import { useThree } from '@react-three/fiber'
 import { act, create } from '@react-three/test-renderer'
 import { createElement } from 'react'
 import { Group, type PointLight } from 'three'
-import { useItemLightPool } from '../../store/use-item-light-pool'
+import { catalogLightSource, useItemLightPool } from '../../store/use-item-light-pool'
 import useViewer from '../../store/use-viewer'
 import { ItemLightSystem } from './item-light-system'
 
@@ -145,6 +145,46 @@ test('a baked owner suppresses the native pool on its canvas', async () => {
     expect(renderer.scene.findAllByType('PointLight')).toHaveLength(0)
     await act(async () => useItemLightPool.getState().setBakedCanvas(canvas!, false))
     expect(renderer.scene.findAllByType('PointLight')).toHaveLength(12)
+  } finally {
+    await renderer.unmount()
+  }
+})
+
+test('saved lamp state drives a real point light and survives scene-state replacement', async () => {
+  const id = 'item_saved_lamp' as AnyNodeId
+  const object = new Group()
+  sceneRegistry.nodes.set(id, object)
+  const lighting = { enabled: true, intensity: 1.6, color: '#ffbb66' }
+  const nodes = {
+    site: { id: 'site', type: 'site', visible: true, parentId: null },
+    building: { id: 'building', type: 'building', visible: true, parentId: 'site' },
+    level: { id: 'level', type: 'level', visible: true, parentId: 'building' },
+    [id]: { id, type: 'item', visible: true, parentId: 'level', lighting },
+  } as unknown as Record<AnyNodeId, AnyNode>
+  useScene.setState({ nodes })
+  useViewer.setState({ levelMode: 'stacked', selection: { ...useViewer.getState().selection, levelId: null } })
+  useItemLightPool.getState().register(catalogLightSource(
+    'saved:0', id,
+    { kind: 'light', color: '#ffffff', intensityRange: [0, 2], distance: 5, offset: [0, 1, 0] },
+    { controls: [{ kind: 'toggle' }], effects: [] },
+  ))
+  const renderer = await create(createElement(ItemLightSystem))
+  try {
+    await renderer.advanceFrames(30, 1 / 30)
+    const lights = renderer.scene.findAllByType('PointLight').map((entry) => entry.instance as PointLight)
+    expect(lights.some((light) => light.intensity > 1 && light.color.getHexString() === 'ffbb66')).toBe(true)
+    useScene.setState({ nodes: {
+      ...nodes,
+      [id]: { ...nodes[id]!, lighting: { enabled: false, intensity: 1.6, color: '#66bbff' } },
+    } as Record<AnyNodeId, AnyNode> })
+    await renderer.advanceFrames(30, 1 / 30)
+    expect(lights.every((light) => light.intensity === 0)).toBe(true)
+    useScene.setState({ nodes: {
+      ...nodes,
+      [id]: { ...nodes[id]!, lighting: { enabled: true, intensity: 0.8, color: '#66bbff' } },
+    } as Record<AnyNodeId, AnyNode> })
+    await renderer.advanceFrames(30, 1 / 30)
+    expect(lights.some((light) => light.intensity > 0.5 && light.color.getHexString() === '66bbff')).toBe(true)
   } finally {
     await renderer.unmount()
   }
