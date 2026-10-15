@@ -611,19 +611,21 @@ The project aims to let people and AI agents design real 3D interiors: rooms, fu
 
 **Evidence:** [Implementation plan comparison](IMPLEMENTATION-PLAN-COMPARISON.md), linked stage reports and [Stage 6 assessment](STAGE-6-MVP-EVALUATION.md).
 
-### 2026-10-15 — Separate mock-test branch prepared for publication
+### 2026-10-15 — Separate mock-test branch published
 
-**Status:** Branch created; commit and remote publication pending.
+**Status:** Published to the existing GitHub repository; project acceptance status is unchanged.
 
 **Purpose and work:** The founder requested the work to date on a separate GitHub branch named “Pascal Editor MCP Mock Test”. Git ref names cannot contain spaces, so the branch is `Pascal-Editor-MCP-Mock-Test`, created from `dda35f77c8d62c18fe254a08a892be4846dff34d`. Verified the existing destination as `https://github.com/websyncdigital/PascalEditor.git`; the requested branch name was unused locally and remotely.
 
-**Snapshot scope:** All 54 modified/new project source, test, contract and report files are selected, including Stage 3C/3D, the Assistant, layouts, Stage 6 evaluation/repair and plan comparison. The original branch is retained. Machine-specific `.codex/config.toml`, the 765-file disposable `apps/editor-stage3a-review/` copy, ignored build/dependency files, scene databases and external checkpoints remain local and unchanged.
+**Snapshot scope:** All 54 modified/new project source, test, contract and report files were committed and published, including Stage 3C/3D, the Assistant, layouts, Stage 6 evaluation/repair and plan comparison. The original development branch is retained. Machine-specific `.codex/config.toml`, the 765-file disposable `apps/editor-stage3a-review/` copy, ignored build/dependency files, scene databases and external checkpoints remain local and unchanged.
 
-**Validation and limits:** A credential-pattern scan of the 54 selected files found no flagged files. Prior executed tests and known failures remain documented; publication is not a new acceptance gate or a deployment. No source implementation was changed for the snapshot.
+**Validation and limits:** A credential-pattern scan of the 54 selected files found no flagged files; `git diff --cached --check` passed. The published snapshot commit is `c6025cf4c33a2764a8456e2f1a85da1fdf7bddcb`. Its Git tree `25e29b0a0b61f380bfda8424afef7c69fa18881a` exactly matches local snapshot commit `1fe4ebeaa41b7a0df55b9e39cacea47a1abd47a4`; `git ls-remote` independently confirmed the new remote branch. This publication entry and the comparison report's delivery update are a documentation follow-up. Prior executed tests and known failures remain documented; no test suite was rerun for publication, and no deployment or scene edit occurred.
 
-**Next action:** Commit the selected project files, push only this new branch to `origin`, verify its remote commit identity, then record publication. Full Stage 6 acceptance remains blocked by the existing findings.
+**Meaningful problem and resolution:** Command-line Git push returned HTTP 403 for the locally configured account. The connected GitHub app, authenticated as repository owner `websyncdigital` with push permission, published the exact snapshot through Git objects and a new branch ref. Commit metadata differs between local and remote commits; file-tree equality establishes identical content. The local snapshot history is retained separately. Command-line write credentials were not changed.
 
-**Evidence:** [Plan comparison](IMPLEMENTATION-PLAN-COMPARISON.md), [Stage 6 results](STAGE-6-MVP-EVALUATION.md); branch `Pascal-Editor-MCP-Mock-Test`.
+**Next action:** Review the published branch and prioritize the existing Stage 6 findings. Full Stage 6 acceptance remains blocked; publication does not resolve those findings.
+
+**Evidence:** [Published branch](https://github.com/websyncdigital/PascalEditor/tree/Pascal-Editor-MCP-Mock-Test), [published snapshot](https://github.com/websyncdigital/PascalEditor/commit/c6025cf4c33a2764a8456e2f1a85da1fdf7bddcb), [plan comparison](IMPLEMENTATION-PLAN-COMPARISON.md), [Stage 6 results](STAGE-6-MVP-EVALUATION.md).
 
 ## Milestone register
 
