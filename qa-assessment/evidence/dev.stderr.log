@@ -1,0 +1,2 @@
+$ dotenv -e ./.env -e ./.env.defaults -- turbo run dev --env-mode=loose
+• turbo 2.9.17

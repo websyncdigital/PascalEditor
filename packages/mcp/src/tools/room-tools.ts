@@ -22,6 +22,7 @@ import {
   type PlanAabb,
 } from './layout-clearance'
 import {
+  assertLiveSceneCurrent,
   type LiveSyncStatus,
   liveSyncOutput,
   persistencePayload,
@@ -56,6 +57,7 @@ export const createRoomInput = {
   levelId: NodeIdSchema,
   name: z.string().min(1),
   polygon: z.array(Vec2Schema).min(3),
+  expectedVersion: z.number().int().positive().optional(),
   color: z.string().optional(),
   wallHeight: measurement('length', 'm', {
     positive: true,
@@ -487,7 +489,8 @@ export function registerCreateRoom(server: McpServer, bridge: SceneOperations): 
       outputSchema: createRoomOutput,
       annotations: ADDITIVE_TOOL_ANNOTATIONS,
     },
-    async ({ levelId, name, polygon, color, wallHeight, wallThickness, outdoor }) => {
+    async ({ levelId, name, polygon, expectedVersion, color, wallHeight, wallThickness, outdoor }) => {
+      await assertLiveSceneCurrent(bridge, expectedVersion)
       assertLevel(bridge, levelId)
       const points = polygon as Vec2[]
       const wallDefaults: Partial<WallNodeType> = {
@@ -573,6 +576,7 @@ export function registerAddDoor(server: McpServer, bridge: SceneOperations): voi
       annotations: ADDITIVE_TOOL_ANNOTATIONS,
     },
     async ({ wallId, t, position, width = 0.9, height = 2.1, hingesSide, swingDirection }) => {
+      await assertLiveSceneCurrent(bridge)
       const wall = assertWall(bridge, wallId)
       const length = wallLength(wall)
       if (length < width) {
@@ -620,6 +624,7 @@ export function registerAddWindow(server: McpServer, bridge: SceneOperations): v
       annotations: ADDITIVE_TOOL_ANNOTATIONS,
     },
     async ({ wallId, t, position, width = 1.5, height = 1.5, sillHeight = 0.9 }) => {
+      await assertLiveSceneCurrent(bridge)
       const wall = assertWall(bridge, wallId)
       const length = wallLength(wall)
       if (length < width) {
@@ -666,6 +671,7 @@ export function registerFurnishRoom(server: McpServer, bridge: SceneOperations):
       annotations: ADDITIVE_TOOL_ANNOTATIONS,
     },
     async ({ levelId, zoneId, roomType, polygon, doorWallIndex }) => {
+      await assertLiveSceneCurrent(bridge)
       const room = inferRoomGeometry(bridge, levelId, polygon as Vec2[] | undefined, zoneId)
       assertLevel(bridge, room.levelId)
       const points = room.polygon

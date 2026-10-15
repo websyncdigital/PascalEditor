@@ -70,6 +70,7 @@ const TOOL_POLICIES = [
       'furnish_room',
       'generate_variants',
       'place_design',
+      'place_floor_item',
       'place_item',
       'set_zone',
       'set_zone_intent',
@@ -88,7 +89,9 @@ const TOOL_POLICIES = [
       'create_from_template',
       'create_house_from_brief',
       'create_stair_between_levels',
+      'delete_floor_item',
       'delete_node',
+      'edit_floor_item',
       'remove_floor_opening',
       'rebase_floor_reference',
       'delete_zone',
@@ -156,7 +159,7 @@ describe('MCP tool annotations', () => {
     try {
       const listed = await client.listTools()
       const byName = new Map(listed.tools.map((tool) => [tool.name, tool]))
-      expect(byName.size).toBe(65)
+      expect(byName.size).toBe(EXPECTED_TOOL_NAMES.length)
       expect([...byName.keys()].toSorted()).toEqual(EXPECTED_TOOL_NAMES)
 
       for (const policy of TOOL_POLICIES) {

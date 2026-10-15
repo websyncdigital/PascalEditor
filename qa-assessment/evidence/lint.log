@@ -1,0 +1,241 @@
+packages\nodes\src\procedural-item\renderer.tsx:158:3 lint/correctness/useExhaustiveDependencies  FIXABLE  ━━━━━━━━━━
+
+  i This hook does not specify its dependency on node.recipe.joints.
+  
+    156 │     }
+    157 │   }, [cutKey, node.parentId, node.id])
+  > 158 │   useLayoutEffect(() => {
+        │   ^^^^^^^^^^^^^^^
+    159 │     // Continuous joints start running, as in the baked viewer; flat spins keep #930's default.
+    160 │     const running = new Set(
+  
+  i This dependency is being used here, but is not specified in the hook dependency list.
+  
+    159 │     // Continuous joints start running, as in the baked viewer; flat spins keep #930's default.
+    160 │     const running = new Set(
+  > 161 │       (node.recipe.joints ?? [])
+        │        ^^^^^^^^^^^^^^^^^^
+    162 │         .filter((joint) => joint.kind === 'continuous')
+    163 │         .map((joint) => joint.child),
+  
+  i React relies on hook dependencies to determine when to re-compute Effects.
+    Failing to specify dependencies can result in Effects not updating correctly when state changes.
+    These "stale closures" are a common source of surprising bugs.
+  
+  i Unsafe fix: Add the missing dependency node.recipe.joints to the list.
+  
+    192 │ ··},·[built,·node.id,·invalidate,·node.recipe.joints])␍
+        │                                 ++++++++++++++++++++  
+
+packages\nodes\src\procedural-item\renderer.tsx:241:3 lint/correctness/useExhaustiveDependencies ━━━━━━━━━━
+
+  i This hook specifies a dependency more specific than its captures: effective.metadata?.isNew
+  
+    239 │     else awake.current = false
+    240 │   }, -1)
+  > 241 │   useLayoutEffect(() => {
+        │   ^^^^^^^^^^^^^^^
+    242 │     if (!built || !ref.current || !canRegisterItemLight(effective.metadata)) return
+    243 │     const pool = useItemLightPool.getState()
+  
+  i This capture is more generic than...
+  
+    240 │   }, -1)
+    241 │   useLayoutEffect(() => {
+  > 242 │     if (!built || !ref.current || !canRegisterItemLight(effective.metadata)) return
+        │                                                         ^^^^^^^^^^^^^^^^^^
+    243 │     const pool = useItemLightPool.getState()
+    244 │     const keys: string[] = []
+  
+  i ...this dependency.
+  
+    275 │       for (const key of keys) useItemLightPool.getState().unregister(key)
+    276 │     }
+  > 277 │   }, [built, node.id, effective.visible, effective.metadata?.isNew])
+        │                                          ^^^^^^^^^^^^^^^^^^^^^^^^^
+    278 │   const materialKey = JSON.stringify([effective.recipe.slots, effective.slots, libraryVersion])
+    279 │   const materials = useMemo(() => {
+  
+
+packages\nodes\src\procedural-item\renderer.tsx:241:3 lint/correctness/useExhaustiveDependencies  FIXABLE  ━━━━━━━━━━
+
+  i This hook does not specify its dependency on effective.metadata.
+  
+    239 │     else awake.current = false
+    240 │   }, -1)
+  > 241 │   useLayoutEffect(() => {
+        │   ^^^^^^^^^^^^^^^
+    242 │     if (!built || !ref.current || !canRegisterItemLight(effective.metadata)) return
+    243 │     const pool = useItemLightPool.getState()
+  
+  i This dependency is being used here, but is not specified in the hook dependency list.
+  
+    240 │   }, -1)
+    241 │   useLayoutEffect(() => {
+  > 242 │     if (!built || !ref.current || !canRegisterItemLight(effective.metadata)) return
+        │                                                         ^^^^^^^^^^^^^^^^^^
+    243 │     const pool = useItemLightPool.getState()
+    244 │     const keys: string[] = []
+  
+  i React relies on hook dependencies to determine when to re-compute Effects.
+    Failing to specify dependencies can result in Effects not updating correctly when state changes.
+    These "stale closures" are a common source of surprising bugs.
+  
+  i Unsafe fix: Add the missing dependency effective.metadata to the list.
+  
+    277 │ ··},·[built,·node.id,·effective.visible,·effective.metadata?.isNew,·effective.metadata])␍
+        │                                                                   ++++++++++++++++++++  
+
+packages\viewer\src\systems\interactive\interactive-system.tsx:101:28 lint/correctness/useExhaustiveDependencies  FIXABLE  ━━━━━━━━━━
+
+  i This hook does not specify its dependency on node.parameters.
+  
+     99 │   const togglePart = useInteractive((state) => state.toggleProceduralPart)
+    100 │   const toggleLights = useInteractive((state) => state.toggleProceduralLights)
+  > 101 │   const proceduralHeight = useMemo(
+        │                            ^^^^^^^
+    102 │     () =>
+    103 │       node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,
+  
+  i This dependency is being used here, but is not specified in the hook dependency list.
+  
+    101 │   const proceduralHeight = useMemo(
+    102 │     () =>
+  > 103 │       node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,
+        │                                                                      ^^^^^^^^^^^^^^^
+    104 │     [
+    105 │       node?.type === 'procedural-item' ? node.recipe : null,
+  
+  i React relies on hook dependencies to determine when to re-compute Effects.
+    Failing to specify dependencies can result in Effects not updating correctly when state changes.
+    These "stale closures" are a common source of surprising bugs.
+  
+  i Unsafe fix: Add the missing dependency node.parameters to the list.
+  
+    103 103 │         node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,␍
+    104 104 │       [␍
+    105     │ - ······node?.type·===·'procedural-item'·?·node.recipe·:·null,␍
+    106     │ - ······node?.type·===·'procedural-item'·?·node.parameters·:·null,␍
+        105 │ + ······node?.type·===·'procedural-item'·?·node.recipe·:·null,·␍
+        106 │ + ······node?.type·===·'procedural-item'·?·node.parameters·:·null,·node.parameters␍
+    107 107 │       ],␍
+    108 108 │     )␍
+  
+
+packages\viewer\src\systems\interactive\interactive-system.tsx:101:28 lint/correctness/useExhaustiveDependencies  FIXABLE  ━━━━━━━━━━
+
+  i This hook does not specify its dependency on node?.type.
+  
+     99 │   const togglePart = useInteractive((state) => state.toggleProceduralPart)
+    100 │   const toggleLights = useInteractive((state) => state.toggleProceduralLights)
+  > 101 │   const proceduralHeight = useMemo(
+        │                            ^^^^^^^
+    102 │     () =>
+    103 │       node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,
+  
+  i This dependency is being used here, but is not specified in the hook dependency list.
+  
+    101 │   const proceduralHeight = useMemo(
+    102 │     () =>
+  > 103 │       node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,
+        │       ^^^^^^^^^^
+    104 │     [
+    105 │       node?.type === 'procedural-item' ? node.recipe : null,
+  
+  i React relies on hook dependencies to determine when to re-compute Effects.
+    Failing to specify dependencies can result in Effects not updating correctly when state changes.
+    These "stale closures" are a common source of surprising bugs.
+  
+  i Unsafe fix: Add the missing dependency node?.type to the list.
+  
+    103 103 │         node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,␍
+    104 104 │       [␍
+    105     │ - ······node?.type·===·'procedural-item'·?·node.recipe·:·null,␍
+    106     │ - ······node?.type·===·'procedural-item'·?·node.parameters·:·null,␍
+        105 │ + ······node?.type·===·'procedural-item'·?·node.recipe·:·null,·␍
+        106 │ + ······node?.type·===·'procedural-item'·?·node.parameters·:·null,·node?.type␍
+    107 107 │       ],␍
+    108 108 │     )␍
+  
+
+packages\viewer\src\systems\interactive\interactive-system.tsx:101:28 lint/correctness/useExhaustiveDependencies  FIXABLE  ━━━━━━━━━━
+
+  i This hook does not specify its dependency on node.recipe.
+  
+     99 │   const togglePart = useInteractive((state) => state.toggleProceduralPart)
+    100 │   const toggleLights = useInteractive((state) => state.toggleProceduralLights)
+  > 101 │   const proceduralHeight = useMemo(
+        │                            ^^^^^^^
+    102 │     () =>
+    103 │       node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,
+  
+  i This dependency is being used here, but is not specified in the hook dependency list.
+  
+    101 │   const proceduralHeight = useMemo(
+    102 │     () =>
+  > 103 │       node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,
+        │                                                         ^^^^^^^^^^^
+    104 │     [
+Checked 3002 files in 6s. No fixes applied.
+Found 7 infos.
+    105 │       node?.type === 'procedural-item' ? node.recipe : null,
+  
+  i React relies on hook dependencies to determine when to re-compute Effects.
+    Failing to specify dependencies can result in Effects not updating correctly when state changes.
+    These "stale closures" are a common source of surprising bugs.
+  
+  i Unsafe fix: Add the missing dependency node.recipe to the list.
+  
+    103 103 │         node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,␍
+    104 104 │       [␍
+    105     │ - ······node?.type·===·'procedural-item'·?·node.recipe·:·null,␍
+    106     │ - ······node?.type·===·'procedural-item'·?·node.parameters·:·null,␍
+        105 │ + ······node?.type·===·'procedural-item'·?·node.recipe·:·null,·␍
+        106 │ + ······node?.type·===·'procedural-item'·?·node.parameters·:·null,·node.recipe␍
+    107 107 │       ],␍
+    108 108 │     )␍
+  
+
+packages\viewer\src\systems\interactive\interactive-system.tsx:101:28 lint/correctness/useExhaustiveDependencies  FIXABLE  ━━━━━━━━━━
+
+  i This hook specifies more dependencies than necessary: node?.type === 'procedural-item' ? node.recipe : null, node?.type === 'procedural-item' ? node.parameters : null.
+  
+     99 │   const togglePart = useInteractive((state) => state.toggleProceduralPart)
+    100 │   const toggleLights = useInteractive((state) => state.toggleProceduralLights)
+  > 101 │   const proceduralHeight = useMemo(
+        │                            ^^^^^^^
+    102 │     () =>
+    103 │       node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,
+  
+  i This dependency can be removed from the list.
+  
+    103 │       node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,
+    104 │     [
+  > 105 │       node?.type === 'procedural-item' ? node.recipe : null,
+        │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    106 │       node?.type === 'procedural-item' ? node.parameters : null,
+    107 │     ],
+  
+  i This dependency can be removed from the list.
+  
+    104 │     [
+    105 │       node?.type === 'procedural-item' ? node.recipe : null,
+  > 106 │       node?.type === 'procedural-item' ? node.parameters : null,
+        │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    107 │     ],
+    108 │   )
+  
+  i React relies on hook dependencies to determine when to re-compute Effects.
+    Specifying more dependencies than required can lead to unnecessary re-rendering
+    and degraded performance.
+  
+  i Unsafe fix: Remove the extra dependencies from the list.
+  
+    103 103 │         node?.type === 'procedural-item' ? evaluateRecipe(node.recipe, node.parameters).max[1] : 0,␍
+    104 104 │       [␍
+    105     │ - ······node?.type·===·'procedural-item'·?·node.recipe·:·null,␍
+    106     │ - ······node?.type·===·'procedural-item'·?·node.parameters·:·null,␍
+    107 105 │       ],␍
+    108 106 │     )␍
+  
+

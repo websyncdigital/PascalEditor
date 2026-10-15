@@ -50,3 +50,7 @@ Invoke the `review-architecture` skill (`.agents/skills/review-architecture/SKIL
 - After two consecutive tool failures, stop and change approach.
 - Don't introduce backwards-compatibility shims, dead code, or speculative abstractions.
 - Don't write new comments unless they explain a non-obvious *why*.
+
+## Mandatory development register
+
+For every significant development task, Codex must identify and read the current master register at `docs/mvp/PROJECT-DEVELOPMENT-REGISTER.md` before work, then update it before reporting the task complete. Record the date, stage, purpose, significant work, verified result, meaningful problems, next action, and links to detailed evidence. Keep the current status, milestone table, decisions, blockers, and next actions accurate as work changes them. Distinguish observed results from founder reports and pending verification; do not invent dates or outcomes. Keep entries concise and understandable to the project owner. Do not log trivial commands or duplicate full technical reports. Preserve historical entries and supporting reports; correct an inaccurate current status with a new dated entry or an explicit correction.

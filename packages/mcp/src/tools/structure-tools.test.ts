@@ -4,6 +4,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { DoorNode, ItemNode, WallNode } from '@pascal-app/core'
 import { SceneBridge } from '../bridge/scene-bridge'
 import { createPascalMcpServer } from '../server'
+import { InMemorySceneStore } from './scene-lifecycle/test-utils'
 
 describe('MCP structure adapters', () => {
   test('cut_floor_opening and remove_floor_opening round-trip room construction', async () => {
@@ -673,6 +674,68 @@ describe('MCP Sims placement', () => {
       expect(bridge.getHistory().pastCount).toBe(1)
       bridge.undo()
       expect(bridge.getNodes()).toEqual(narrow)
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+})
+
+describe('saved room structure version guard', () => {
+  test('rejects a stale move before changing the bridge and succeeds after reload', async () => {
+    const bridge = new SceneBridge()
+    bridge.setScene({}, [])
+    bridge.loadDefault()
+    const store = new InMemorySceneStore()
+    const server = createPascalMcpServer({ bridge, store })
+    const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'room-version-contract', version: '1' })
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
+    try {
+      const levelId = Object.values(bridge.getNodes()).find((node) => node.type === 'level')!.id
+      const created = await client.callTool({
+        name: 'create_room',
+        arguments: {
+          levelId,
+          name: 'Disposable room',
+          polygon: [[0, 0], [4, 0], [4, 3], [0, 3]],
+        },
+      })
+      expect(created.isError).toBeFalsy()
+      const zoneId = (created.structuredContent as { zoneId: string }).zoneId
+      const initial = await store.save({ name: 'Saved room', graph: bridge.exportJSON() })
+      const loaded = await client.callTool({ name: 'load_scene', arguments: { id: initial.id } })
+      expect(loaded.isError).toBeFalsy()
+      const before = bridge.exportJSON()
+      const historyBefore = bridge.getHistory().pastCount
+      const external = await store.save({
+        id: initial.id,
+        name: initial.name,
+        graph: before,
+        expectedVersion: initial.version,
+      })
+
+      const stale = await client.callTool({
+        name: 'move_zone',
+        arguments: { zoneId, translate: [1, 0] },
+      })
+      expect(stale.isError).toBe(true)
+      expect(bridge.exportJSON()).toEqual(before)
+      expect(bridge.getHistory().pastCount).toBe(historyBefore)
+      expect((await store.load(initial.id))?.version).toBe(external.version)
+      expect(await store.listSceneEvents(initial.id)).toHaveLength(0)
+
+      const reloaded = await client.callTool({ name: 'load_scene', arguments: { id: initial.id } })
+      expect(reloaded.isError).toBeFalsy()
+      const moved = await client.callTool({
+        name: 'move_zone',
+        arguments: { zoneId, translate: [1, 0] },
+      })
+      expect(moved.isError).toBeFalsy()
+      const saved = await store.load(initial.id)
+      expect(saved?.version).toBe(external.version + 1)
+      expect(saved?.graph.nodes[zoneId]).toMatchObject({ polygon: [[1, 0], [5, 0], [5, 3], [1, 3]] })
+      expect(await store.listSceneEvents(initial.id)).toHaveLength(1)
     } finally {
       await client.close()
       await server.close()

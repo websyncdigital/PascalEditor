@@ -5,7 +5,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { AnyNodeId } from '@pascal-app/core/schema'
 import { CeilingNode, LevelNode, SlabNode } from '@pascal-app/core/schema'
 import { SceneBridge } from '../bridge/scene-bridge'
+import type { SceneSaveOptions } from '../storage/types'
 import { registerRoomTools } from './room-tools'
+import { createTestSceneOperations, InMemorySceneStore } from './scene-lifecycle/test-utils'
 
 describe('room tools', () => {
   let client: Client
@@ -451,5 +453,124 @@ describe('room tools', () => {
     if (bedPlaced) {
       expect(doorSkips.length).toBe(0)
     }
+  })
+})
+
+describe('create_room saved-scene version guard', () => {
+  test('persists a room and rejects a stale version before changing the bridge', async () => {
+    const bridge = new SceneBridge()
+    bridge.setScene({}, [])
+    bridge.loadDefault()
+    const store = new InMemorySceneStore()
+    const { operations } = createTestSceneOperations({ bridge, store })
+    const initial = await operations.saveScene({ name: 'Disposable room test', graph: operations.exportSceneGraph() })
+    operations.setActiveScene(initial)
+    const server = new McpServer({ name: 'test', version: '0.0.0' })
+    registerRoomTools(server, operations)
+    const [srvT, cliT] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'test-client', version: '0.0.0' })
+    await Promise.all([server.connect(srvT), client.connect(cliT)])
+    const level = Object.values(bridge.getNodes()).find((node) => node.type === 'level')!
+    const arguments_ = {
+      levelId: level.id,
+      name: 'Bedroom',
+      polygon: [[0, 0], [4, 0], [4, 3], [0, 3]],
+      expectedVersion: initial.version,
+    }
+    const created = await client.callTool({ name: 'create_room', arguments: arguments_ })
+    expect(created.isError).toBeFalsy()
+    const createdRoom = JSON.parse((created.content as Array<{ text: string }>)[0]!.text)
+    const saved = await store.load(initial.id)
+    expect(saved?.version).toBe(initial.version + 1)
+    expect(saved?.graph.nodes[createdRoom.zoneId]).toMatchObject({ name: 'Bedroom', spaceRole: 'room' })
+    expect(Object.values(saved!.graph.nodes).filter((node) => node.type === 'wall')).toHaveLength(4)
+    const reopened = new SceneBridge()
+    reopened.loadJSON(saved!.graph)
+    expect(reopened.getNode(createdRoom.zoneId)).toMatchObject({ name: 'Bedroom', spaceRole: 'room' })
+    expect(reopened.validateScene().valid).toBe(true)
+
+    const graphBeforeConflict = operations.exportSceneGraph()
+    const stale = await client.callTool({ name: 'create_room', arguments: arguments_ })
+    expect(stale.isError).toBe(true)
+    expect(JSON.stringify(operations.exportSceneGraph())).toBe(JSON.stringify(graphBeforeConflict))
+    expect((await store.load(initial.id))?.version).toBe(initial.version + 1)
+
+    const active = operations.getActiveScene()!
+    const external = await store.save({
+      id: initial.id,
+      name: active.name,
+      graph: saved!.graph,
+      expectedVersion: active.version,
+    })
+    const externalConflict = await client.callTool({
+      name: 'create_room',
+      arguments: { ...arguments_, expectedVersion: active.version },
+    })
+    expect(externalConflict.isError).toBe(true)
+    const omittedVersionConflict = await client.callTool({
+      name: 'create_room',
+      arguments: { levelId: level.id, name: 'Bedroom', polygon: arguments_.polygon },
+    })
+    expect(omittedVersionConflict.isError).toBe(true)
+    expect(JSON.stringify(operations.exportSceneGraph())).toBe(JSON.stringify(graphBeforeConflict))
+    expect((await store.load(initial.id))?.version).toBe(external.version)
+  })
+
+  test('reloads the competing saved scene when storage changes after the precheck', async () => {
+    class RacingSceneStore extends InMemorySceneStore {
+      beforeSave?: () => Promise<void>
+
+      override async save(options: SceneSaveOptions) {
+        const beforeSave = this.beforeSave
+        this.beforeSave = undefined
+        if (beforeSave) await beforeSave()
+        return super.save(options)
+      }
+    }
+
+    const bridge = new SceneBridge()
+    bridge.setScene({}, [])
+    bridge.loadDefault()
+    const store = new RacingSceneStore()
+    const { operations } = createTestSceneOperations({ bridge, store })
+    const initial = await store.save({ name: 'Disposable room test', graph: operations.exportSceneGraph() })
+    operations.setActiveScene(initial)
+    const server = new McpServer({ name: 'test', version: '0.0.0' })
+    registerRoomTools(server, operations)
+    const [srvT, cliT] = InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: 'test-client', version: '0.0.0' })
+    await Promise.all([server.connect(srvT), client.connect(cliT)])
+    const level = Object.values(bridge.getNodes()).find((node) => node.type === 'level')!
+    const externalGraph = operations.exportSceneGraph()
+    externalGraph.nodes[level.id] = { ...level, name: 'External edit' }
+    store.beforeSave = async () => {
+      await store.save({
+        id: initial.id,
+        name: initial.name,
+        graph: externalGraph,
+        expectedVersion: initial.version,
+      })
+    }
+
+    const args = {
+      levelId: level.id,
+      name: 'Unpublished room',
+      polygon: [[0, 0], [4, 0], [4, 3], [0, 3]],
+      expectedVersion: initial.version,
+    }
+    const conflict = await client.callTool({ name: 'create_room', arguments: args })
+    expect(conflict.isError).toBe(true)
+    expect(operations.exportSceneGraph()).toEqual(externalGraph)
+    expect(operations.getActiveScene()?.version).toBe(initial.version + 1)
+    expect(bridge.getHistory().pastCount).toBe(0)
+    expect((await store.load(initial.id))?.graph).toEqual(externalGraph)
+    expect(await store.listSceneEvents(initial.id)).toHaveLength(0)
+
+    const retry = await client.callTool({
+      name: 'create_room',
+      arguments: { ...args, expectedVersion: initial.version + 1 },
+    })
+    expect(retry.isError).toBeFalsy()
+    expect((await store.load(initial.id))?.version).toBe(initial.version + 2)
   })
 })

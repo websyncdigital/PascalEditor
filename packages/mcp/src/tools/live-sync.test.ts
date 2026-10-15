@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import * as fs from 'node:fs/promises'
+import * as os from 'node:os'
+import * as path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SceneBridge } from '../bridge/scene-bridge'
 import { createSceneOperations, type SceneOperations } from '../operations'
+import { SqliteSceneStore } from '../storage/sqlite-scene-store'
 import type { SceneStore } from '../storage/types'
 import { registerCreateWall } from './create-wall'
 import { publishLiveSceneSnapshot } from './live-sync'
@@ -124,5 +128,94 @@ describe('publishLiveSceneSnapshot', () => {
     operations.setActiveScene(meta)
     expect(await publishLiveSceneSnapshot(operations, 'test')).toBe('published')
     expect(await store.listSceneEvents(meta.id)).toHaveLength(1)
+  })
+
+  test('reloads the saved graph after a rejected write', async () => {
+    const bridge = createBridge()
+    const { store, operations } = createTestSceneOperations({ bridge })
+    const initial = await store.save({ name: 'Live Scene', graph: operations.exportSceneGraph() })
+    operations.setActiveScene(initial)
+    const level = Object.values(bridge.getNodes()).find((node) => node.type === 'level')!
+    const externalGraph = operations.exportSceneGraph()
+    externalGraph.nodes[level.id] = { ...level, name: 'External edit' }
+    const external = await store.save({
+      id: initial.id,
+      name: initial.name,
+      graph: externalGraph,
+      expectedVersion: initial.version,
+    })
+
+    bridge.updateNode(level.id, { name: 'Unsaved MCP edit' })
+    await expect(publishLiveSceneSnapshot(operations, 'test')).rejects.toThrow(
+      'live_sync_version_conflict',
+    )
+    expect(operations.exportSceneGraph()).toEqual(externalGraph)
+    expect(operations.getActiveScene()?.version).toBe(external.version)
+    expect(bridge.getHistory().pastCount).toBe(0)
+    expect(await store.listSceneEvents(initial.id)).toHaveLength(0)
+
+    bridge.updateNode(level.id, { name: 'Retried edit' })
+    expect(await publishLiveSceneSnapshot(operations, 'test')).toBe('published')
+    expect((await store.load(initial.id))?.version).toBe(external.version + 1)
+  })
+
+  test('restores the authoritative SQLite graph after a late version conflict', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'pascal-stage3a-conflict-'))
+    const store = new SqliteSceneStore({ databasePath: path.join(directory, 'pascal.db') })
+    try {
+      const bridge = createBridge()
+      const operations = createSceneOperations({ bridge, store })
+      const initial = await store.save({ name: 'Disposable room scene', graph: operations.exportSceneGraph() })
+      operations.setActiveScene(initial)
+      const level = Object.values(bridge.getNodes()).find((node) => node.type === 'level')!
+      const externalGraph = operations.exportSceneGraph()
+      externalGraph.nodes[level.id] = { ...level, name: 'Concurrent saved edit' }
+      const external = await store.save({
+        id: initial.id,
+        name: initial.name,
+        graph: externalGraph,
+        expectedVersion: initial.version,
+      })
+
+      bridge.updateNode(level.id, { name: 'Rejected MCP edit' })
+      await expect(publishLiveSceneSnapshot(operations, 'move_zone')).rejects.toThrow(
+        'live_sync_version_conflict',
+      )
+      const persisted = await store.load(initial.id)
+      expect(persisted?.version).toBe(external.version)
+      expect(persisted?.graph.nodes[level.id]).toMatchObject({ name: 'Concurrent saved edit' })
+      expect(operations.getNode(level.id)).toMatchObject({ name: 'Concurrent saved edit' })
+      expect(operations.getActiveScene()?.version).toBe(external.version)
+      expect(operations.getHistory().pastCount).toBe(0)
+      expect(await store.listSceneEvents(initial.id)).toHaveLength(0)
+    } finally {
+      store.close()
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test('reports an event failure as persisted without retrying the save', async () => {
+    const bridge = createBridge()
+    const base = new InMemorySceneStore()
+    const store: SceneStore = {
+      ...withoutSceneEvents(base),
+      appendSceneEvent: async () => {
+        throw new Error('event unavailable')
+      },
+    }
+    const operations = createSceneOperations({ bridge, store })
+    const initial = await base.save({ name: 'Live Scene', graph: operations.exportSceneGraph() })
+    operations.setActiveScene(initial)
+    const level = Object.values(bridge.getNodes()).find((node) => node.type === 'level')!
+    bridge.updateNode(level.id, { name: 'Saved despite event failure' })
+
+    await expect(publishLiveSceneSnapshot(operations, 'test')).rejects.toThrow(
+      'live_sync_event_failed',
+    )
+    const saved = await base.load(initial.id)
+    expect(saved?.version).toBe(initial.version + 1)
+    expect(saved?.graph.nodes[level.id]).toMatchObject({ name: 'Saved despite event failure' })
+    expect(operations.getActiveScene()?.version).toBe(saved?.version)
+    expect(await base.listSceneEvents(initial.id)).toHaveLength(0)
   })
 })

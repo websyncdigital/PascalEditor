@@ -26,7 +26,12 @@ import {
 import { z } from 'zod'
 import type { SceneOperations } from '../operations'
 import { ADDITIVE_TOOL_ANNOTATIONS, DESTRUCTIVE_TOOL_ANNOTATIONS } from './annotations'
-import { liveSyncOutput, persistencePayload, publishLiveSceneSnapshot } from './live-sync'
+import {
+  assertLiveSceneCurrent,
+  liveSyncOutput,
+  persistencePayload,
+  publishLiveSceneSnapshot,
+} from './live-sync'
 import { NodeIdSchema } from './schemas'
 
 export const setZoneIntentInput = { zoneId: NodeIdSchema, patch: ZoneIntentPatch }
@@ -145,6 +150,7 @@ async function apply(
   },
   force = false,
 ) {
+  await assertLiveSceneCurrent(bridge)
   let plannedZone = plan.zoneId ? bridge.getNode(plan.zoneId as AnyNodeId) : undefined
   for (const change of plan.changes) {
     if (change.op === 'create' && change.node.id === plan.zoneId) plannedZone = change.node
